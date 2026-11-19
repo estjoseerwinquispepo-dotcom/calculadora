@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interpolación de Lagrange</title>
+<style>
+:root{--bg:#f3f6fb;--panel:#fff;--ink:#172033;--muted:#64748b;--accent:#315efb;--line:#dce4f0;--good:#087f5b;--bad:#b42318}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:linear-gradient(120deg,#172554,#315efb);color:white;padding:30px 18px;text-align:center}
+header h1{margin:0 0 8px;font-size:clamp(1.5rem,4vw,2.2rem)}
+header p{margin:0;color:#e5eaff}
+main{width:min(1100px,94%);margin:24px auto;display:grid;grid-template-columns: minmax(280px, .85fr) minmax(320px,1.15fr);gap:18px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 5px 18px #1725540a}
+h2{font-size:1.15rem;margin:0 0 14px}
+.hint{font-size:.9rem;color:var(--muted);line-height:1.45}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{border:1px solid var(--line);padding:9px;text-align:center}
+th{background:#eef2ff}
+input{width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:7px;font-size:1rem}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer;background:var(--accent);color:white}
+button.secondary{background:#e8edff;color:#233b9a}
+button.danger{background:#fff0ef;color:var(--bad)}
+.result{background:#f6f8ff;border:1px solid var(--line);border-radius:10px;padding:13px;margin:10px 0;overflow-wrap:anywhere}
+.value{font-size:1.55rem;font-weight:700;color:var(--good)}
+#error{color:var(--bad);font-weight:600;min-height:1.2em}
+canvas{width:100%;height:300px;border:1px solid var(--line);border-radius:10px;background:white}
+details{margin-top:12px}
+summary{cursor:pointer;font-weight:700}
+footer{text-align:center;color:var(--muted);padding:10px 18px 28px;font-size:.85rem}
+@media(max-width:760px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Calculadora de Interpolación de Lagrange</h1>
+  <p>Calcula el polinomio interpolante a partir de un conjunto de puntos</p>
+</header>
+<main>
+<section>
+  <h2>1. Ingresar los puntos</h2>
+  <p class="hint">Escribe los valores de X y Y. Puedes agregar o quitar filas. Los valores de X no deben repetirse.</p>
+  <table>
+    <thead><tr><th>#</th><th>Valor X</th><th>Valor Y</th><th></th></tr></thead>
+    <tbody id="pointRows"></tbody>
+  </table>
+  <div class="actions">
+    <button class="secondary" id="addPoint">+ Agregar punto</button>
+    <button class="danger" id="reset">Restablecer</button>
+  </div>
+  <h2 style="margin-top:22px">2. Evaluar el polinomio</h2>
+  <label for="targetX">Valor de X que deseas calcular</label>
+  <input id="targetX" type="number" step="any" value="2.5">
+  <div class="actions"><button id="calculate">Calcular interpolación</button></div>
+  <p id="error" role="alert"></p>
+</section>
+<section>
+  <h2>3. Resultado</h2>
+  <div class="result"><div class="hint">Valor interpolado P(x)</div><div id="answer" class="value">—</div></div>
+  <div class="result"><div class="hint">Polinomio interpolante (forma de Lagrange)</div><div id="polynomial">Ingresa los puntos y presiona Calcular.</div></div>
+  <details><summary>Ver desarrollo de las bases de Lagrange</summary><div id="basis" class="hint">Aquí aparecerá el desarrollo de cada base.</div></details>
+  <h2 style="margin-top:22px">4. Gráfica</h2>
+  <canvas id="plot" width="800" height="360" aria-label="Gráfica del polinomio interpolante"></canvas>
+  <p class="hint">Los puntos ingresados se muestran junto con la curva del polinomio.</p>
+</section>
+</main>
+<footer>Proyecto académico · Método de interpolación polinómica de Lagrange</footer>
+<script>
+const tbody = document.getElementById('pointRows');
+const examples = [[1,1],[2,4],[3,9]];
+function addRow(x='',y=''){
+  if(tbody.children.length>=10){showError('Puedes ingresar como máximo 10 puntos.');return;}
+  const tr=document.createElement('tr');
+  const n=document.createElement('td'); n.textContent=tbody.children.length+1;
+  const tx=document.createElement('td'), ty=document.createElement('td'), act=document.createElement('td');
+  const ix=document.createElement('input'), iy=document.createElement('input');
+  ix.type=iy.type='number'; ix.step=iy.step='any'; ix.value=x; iy.value=y;
+  ix.setAttribute('aria-label','Coordenada X'); iy.setAttribute('aria-label','Coordenada Y');
+  tx.append(ix); ty.append(iy);
+  const del=document.createElement('button'); del.textContent='×'; del.className='danger'; del.title='Eliminar punto';
+  del.addEventListener('click',()=>{if(tbody.children.length>2){tr.remove();renumber();}else showError('Debes conservar al menos dos puntos.');});
+  act.append(del); tr.append(n,tx,ty,act); tbody.append(tr);
+}
+function renumber(){[...tbody.children].forEach((r,i)=>r.cells[0].textContent=i+1);}
+function readPoints(){
+  const rows=[...tbody.querySelectorAll('tr')];
+  const pts=rows.map(r=>({x:Number(r.cells[1].querySelector('input').value),y:Number(r.cells[2].querySelector('input').value)}));
+  if(pts.length<2) throw Error('Ingresa al menos dos puntos.');
+  if(pts.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y))) throw Error('Completa todos los valores X e Y.');
+  if(new Set(pts.map(p=>p.x)).size!==pts.length) throw Error('Los valores de X deben ser diferentes.');
+  return pts;
+}
+function lagrange(pts,x){
+  let total=0; const terms=[];
+  for(let i=0;i<pts.length;i++){
+    let base=1, factors=[];
+    for(let j=0;j<pts.length;j++) if(i!==j){base*= (x-pts[j].x)/(pts[i].x-pts[j].x);factors.push(`(x - ${pts[j].x}) / (${pts[i].x} - ${pts[j].x})`);}
+    total+=pts[i].y*base;
+    terms.push({base,term:`${pts[i].y} · ${factors.join(' · ')}`});
+  }
+  return {value:total,terms};
+}
+function showError(msg=''){document.getElementById('error').textContent=msg;}
+function fmt(v){return Number(v.toFixed(6)).toString();}
+function draw(pts, target){
+  const c=document.getElementById('plot'),ctx=c.getContext('2d'),w=c.width,h=c.height;
+  ctx.clearRect(0,0,w,h);
+  const minX=Math.min(...pts.map(p=>p.x),target),maxX=Math.max(...pts.map(p=>p.x),target);
+  const spanX=Math.max(maxX-minX,1),left=minX-spanX*.2,right=maxX+spanX*.2;
+  const samples=Array.from({length:160},(_,i)=>left+(right-left)*i/159);
+  const vals=samples.map(x=>lagrange(pts,x).value).filter(Number.isFinite);
+  const minY=Math.min(...pts.map(p=>p.y),...vals),maxY=Math.max(...pts.map(p=>p.y),...vals);
+  const spanY=Math.max(maxY-minY,1),bottom=minY-spanY*.15,top=maxY+spanY*.15;
+  const X=x=>45+(x-left)/(right-left)*(w-65),Y=y=>h-35-(y-bottom)/(top-bottom)*(h-60);
+  ctx.strokeStyle='#e5eaf2';ctx.lineWidth=1;
+  for(let i=0;i<=5;i++){let yy=35+i*(h-70)/5;ctx.beginPath();ctx.moveTo(45,yy);ctx.lineTo(w-20,yy);ctx.stroke();}
+  ctx.strokeStyle='#315efb';ctx.lineWidth=3;ctx.beginPath();
+  let started=false;
+  samples.forEach(x=>{const y=lagrange(pts,x).value;if(!Number.isFinite(y))return;if(!started){ctx.moveTo(X(x),Y(y));started=true;}else ctx.lineTo(X(x),Y(y));});
+  ctx.stroke();
+  pts.forEach(p=>{ctx.beginPath();ctx.arc(X(p.x),Y(p.y),6,0,Math.PI*2);ctx.fillStyle='#e05a36';ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=2;ctx.stroke();});
+  if(Number.isFinite(target)){const val=lagrange(pts,target).value;ctx.beginPath();ctx.arc(X(target),Y(val),5,0,Math.PI*2);ctx.fillStyle='#087f5b';ctx.fill();}
+}
+function calculate(){
+  try{
+    showError();const pts=readPoints(),x=Number(document.getElementById('targetX').value);
+    if(!Number.isFinite(x))throw Error('Escribe un valor válido para X.');
+    const result=lagrange(pts,x);
+    document.getElementById('answer').textContent=fmt(result.value);
+    document.getElementById('polynomial').textContent=result.terms.map((t,i)=>`L${i}(x) = ${t.term}`).join('  +  ');
+    document.getElementById('basis').innerHTML=result.terms.map((t,i)=>`<p><strong>L${i}(x):</strong> ${t.term}<br><strong>Base evaluada:</strong> ${fmt(t.base)}</p>`).join('');
+    draw(pts,x);
+  }catch(e){showError(e.message);}
+}
+document.getElementById('addPoint').addEventListener('click',()=>addRow());
+document.getElementById('calculate').addEventListener('click',calculate);
+document.getElementById('reset').addEventListener('click',()=>{tbody.innerHTML='';examples.forEach(p=>addRow(...p));document.getElementById('targetX').value='2.5';document.getElementById('answer').textContent='—';document.getElementById('polynomial').textContent='Ingresa los puntos y presiona Calcular.';document.getElementById('basis').textContent='Aquí aparecerá el desarrollo de cada base.';showError();draw(examples,2.5);});
+examples.forEach(p=>addRow(...p));calculate();
+</script>
+</body>
+</html>
